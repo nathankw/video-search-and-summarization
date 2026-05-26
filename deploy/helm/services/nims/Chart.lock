@@ -5,5 +5,8 @@ dependencies:
 - name: cosmos-reason2-8b
   repository: file://./charts/cosmos-reason2-8b
   version: 26.04.2
-digest: sha256:8a73eb23736774155cdfe921d76955ae0cd4f2f1e8b2eaf6aef424a776baa30b
-generated: "2026-04-20T18:59:24.094041+05:30"
+- name: cosmos3-reasoner
+  repository: file://./charts/cosmos3-reasoner
+  version: 26.04.2
+digest: sha256:d1ae81803fd52a4ea1cad4899a46dce29ab645138b86299c97eec4cf15c955a3
+generated: "2026-05-26T02:27:17.034847982Z"

@@ -60,6 +60,16 @@ gpuProfiles:
       NIM_KVCACHE_PERCENT: "0.7"
       NIM_PASSTHROUGH_ARGS: "--gpu-memory-utilization 0.7"
       NIM_DISABLE_MM_PREPROCESSOR_CACHE: "1"
+    # Mirrors deploy/docker/services/nim/cosmos3-reasoner/hw-H100.env (dedicated GPU layout).
+    # The shared (hw-H100-shared.env) variant inherits VLM_NIM_KVCACHE_PERCENT from compose
+    # and is not represented in the static helm profile.
+    cosmos3:
+      NIM_KVCACHE_PERCENT: "0.4"
+      NIM_PASSTHROUGH_ARGS: "--gpu-memory-utilization 0.4"
+      NIM_MAX_MODEL_LEN: "32768"
+      NIM_MAX_NUM_SEQS: "4"
+      MAX_JOBS: "4"
+      NIM_DISABLE_MM_PREPROCESSOR_CACHE: "1"
 
   L40S:
     nemotron:
@@ -75,6 +85,11 @@ gpuProfiles:
       NIM_MAX_MODEL_LEN: "32768"
       NIM_MAX_NUM_SEQS: "4"
       MAX_JOBS: "4"
+    # NOTE: docker compose PR #696 does not ship an hw-L40S.env for cosmos3-reasoner.
+    # Leaving cosmos3 unpopulated here; the umbrella ConfigMap will simply emit no
+    # GPU-tuning keys when gpuType=L40S and cosmos3.enabled=true. Add L40S values
+    # only after the docker side declares them.
+    cosmos3: {}
 
   # Matches live nim-env ConfigMaps when gpuType=RTXPRO6000BW (e.g. vss-summarization namespace).
   RTXPRO6000BW:
@@ -88,6 +103,15 @@ gpuProfiles:
     cosmos:
       NIM_KVCACHE_PERCENT: "0.7"
       NIM_PASSTHROUGH_ARGS: "--gpu-memory-utilization 0.7"
+      NIM_DISABLE_MM_PREPROCESSOR_CACHE: "1"
+    # Mirrors deploy/docker/services/nim/cosmos3-reasoner/hw-RTXPRO6000BW.env
+    # (dedicated GPU layout — values match the H100 dedicated layout exactly).
+    cosmos3:
+      NIM_KVCACHE_PERCENT: "0.4"
+      NIM_PASSTHROUGH_ARGS: "--gpu-memory-utilization 0.4"
+      NIM_MAX_MODEL_LEN: "32768"
+      NIM_MAX_NUM_SEQS: "4"
+      MAX_JOBS: "4"
       NIM_DISABLE_MM_PREPROCESSOR_CACHE: "1"
 
 # ---------------------------------------------------------------------------
@@ -186,4 +210,62 @@ cosmos:
     - NIM_KVCACHE_PERCENT
     - NIM_PASSTHROUGH_ARGS
     - NIM_DISABLE_MM_PREPROCESSOR_CACHE
-  
+
+# ---------------------------------------------------------------------------
+# Cosmos3 Reasoner – RC / staging VLM NIM (alias: cosmos3)
+# Mirrors deploy/docker/services/nim/cosmos3-reasoner/compose.yml, which is
+# itself opt-in via VLM_NAME=nvidia/cosmos3-reasoner in dev-profile-base/.env.
+# Disabled by default at the umbrella level — flip cosmos3.enabled=true and
+# disable cosmos.enabled to swap the VLM NIM.
+# ---------------------------------------------------------------------------
+cosmos3:
+  enabled: false
+  # Override the NIMCache/NIMService resource name (default: nvidia-cosmos3-reasoner,
+  # or <release>-nvidia-cosmos3-reasoner with prefix). Useful for cross-chart references.
+  fullnameOverride: ""
+
+  image:
+    repository: nvcr.io/nvstaging/nim/cosmos3-reasoner
+    tag: "1.7.1.rc0-51870194"
+    pullPolicy: IfNotPresent
+
+  replicas: 1
+
+  resources:
+    limits:
+      nvidia.com/gpu: "1"
+    requests:
+      nvidia.com/gpu: "1"
+
+  storage:
+    pvc:
+      # Leave empty to inherit global.storageClass
+      storageClass: ""
+      size: "200Gi"
+    sharedMemorySizeLimit: "32Gi"
+
+  metrics:
+    enabled: false
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+  # NIM_MODEL_SIZE selects the model variant baked into the staging image.
+  # Mirrors the NIM_MODEL_SIZE knob in dev-profile-base/.env (nano default, super for dedicated VLM GPU).
+  env:
+    NIM_MODEL_SIZE: "nano"
+  # Imported from <cosmos3-fullname>-nim-env ConfigMap into NIMService.spec.env.
+  # Missing keys are ignored (optional: true).
+  envConfigMapKeys:
+    - NIM_KVCACHE_PERCENT
+    - NIM_PASSTHROUGH_ARGS
+    - NIM_DISABLE_MM_PREPROCESSOR_CACHE
+    - NIM_MAX_MODEL_LEN
+    - NIM_MAX_NUM_SEQS
+    - MAX_JOBS

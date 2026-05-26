@@ -1,0 +1,75 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Default values for cosmos3-reasoner.
+# These are overridden by the parent nims chart via alias "cosmos3".
+#
+# NOTE: This is a staging RC NIM. Mirrors the dev-profile-base
+# docker compose (deploy/docker/services/nim/cosmos3-reasoner/compose.yml)
+# which is opt-in via VLM_NAME=nvidia/cosmos3-reasoner. Disabled by
+# default at the umbrella level.
+
+image:
+  repository: nvcr.io/nvstaging/nim/cosmos3-reasoner
+  tag: "1.7.1.rc0-51870194"
+  pullPolicy: IfNotPresent
+
+replicas: 1
+
+resources:
+  limits:
+    nvidia.com/gpu: "1"
+  requests:
+    nvidia.com/gpu: "1"
+
+storage:
+  pvc:
+    storageClass: ""
+    size: "200Gi"
+  sharedMemorySizeLimit: "32Gi"
+
+metrics:
+  enabled: false
+
+service:
+  type: ClusterIP
+  port: 8000
+
+tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+
+# NIM_MODEL_SIZE selects nano (default) or super model variant baked into
+# the staging image. Mirrors the docker compose env knob of the same name.
+# NIM_KVCACHE_PERCENT / NIM_PASSTHROUGH_ARGS are populated via the parent
+# chart's GPU profile lookup table (gpuProfiles.<gpuType>.cosmos3).
+env:
+  NIM_MODEL_SIZE: "nano"
+  NIM_KVCACHE_PERCENT: ""
+  NIM_PASSTHROUGH_ARGS: ""
+  NIM_DISABLE_MM_PREPROCESSOR_CACHE: "1"
+
+# Keys to import from <cosmos3-fullname>-nim-env ConfigMap into NIMService.spec.env.
+# Missing keys are skipped due to optional: true.
+envConfigMapKeys:
+  - NIM_KVCACHE_PERCENT
+  - NIM_PASSTHROUGH_ARGS
+  - NIM_DISABLE_MM_PREPROCESSOR_CACHE
+
+global:
+  pullSecretName: "ngc-nim-docker-reg-secret"
+  authSecretName: "ngc-nim-api-key-secret"
+  storageClass: ""
