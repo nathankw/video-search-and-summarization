@@ -25,6 +25,67 @@ its `/v1/...` API for caption generation, file upload, live-stream management, h
 checks, NIM-compatible chat completions, or Prometheus metrics. API reference:
 <https://docs.nvidia.com/vss/latest/real-time-vlm-api.html>.
 
+## Deployment Routing
+
+If the user asks to deploy a full VSS profile, use
+[`../vss-deploy-profile/SKILL.md`](../vss-deploy-profile/SKILL.md). That skill
+owns profile routing, `generated.env`, `resolved.yml`, multi-service sizing, and
+full-stack deploy/teardown.
+
+If the user asks for standalone RT-VLM dense captioning, or no VSS profile is
+already running, use the standalone RT-VLM flow in
+[`references/deploy-rt-vlm-service.md`](references/deploy-rt-vlm-service.md)
+before calling the API. This follows the same compose-centric pattern as
+`vss-deploy-profile`: gather context, run preflights, work from a local copy,
+dry-run with `docker compose config`, review, deploy, then wait for health.
+
+## Standalone Deployment Flow
+
+Always follow this sequence. Never skip the dry-run.
+
+```bash
+# 1. Copy deploy/docker/services/rtvi/rtvi-vlm/rtvi-vlm-docker-compose.yml
+#    into a standalone working directory.
+# 2. Derive RTVI_VLM_IMAGE_TAG from that compose copy.
+# 3. Strip the standalone-only dangling depends_on block from the copy.
+# 4. Create a gitignored .env with the required RT-VLM values.
+# 5. docker compose --env-file .env -f rtvi-vlm-docker-compose.yml config --quiet
+# 6. docker pull the exact RT-VLM image tag.
+# 7. docker compose ... up -d rtvi-vlm, wait for ready, then smoke test.
+```
+
+Run preflights before any pull or `up`; stop and fix failures here before
+debugging RT-VLM itself:
+
+```bash
+nvidia-smi --query-gpu=index,name --format=csv,noheader
+nvidia-container-cli info
+docker compose version
+docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+```
+
+For standalone single-file deployments, do not run the raw
+`deploy/docker/services/rtvi/rtvi-vlm/rtvi-vlm-docker-compose.yml` directly: it
+contains `depends_on` references to sibling VLM/NIM services that are only
+defined in the full VSS/met-blueprints compose project. The standalone reference
+shows how to copy the compose file, derive the current image tag from it, strip
+the `depends_on` block, and validate the result before `up`.
+
+If `docker pull` fails with a containerd snapshotter/unpack error on Docker 28+,
+apply the `/etc/docker/daemon.json` `containerd-snapshotter=false` fix in the
+standalone reference before retrying.
+
+Minimum standalone `.env` values:
+
+| Host env var | Required when | Purpose |
+|---|---|---|
+| `NGC_CLI_API_KEY` or `RTVI_VLM_API_KEY` | Always | NGC image/model access and RT-VLM bearer auth |
+| `RTVI_VLM_PORT` | Always | Host API port mapped to container `8000` |
+| `HOST_IP` | Always | Kafka bootstrap host (`${HOST_IP}:9092`) |
+| `VSS_DATA_DIR` | Always | Required clip-storage bind mount |
+| `RTVI_VLM_ENDPOINT` | `RTVI_VLM_MODEL_TO_USE=openai-compat` | Remote/sibling OpenAI-compatible VLM endpoint |
+| `VLM_NAME` | `RTVI_VLM_MODEL_TO_USE=openai-compat` | Model/deployment name exposed by that endpoint |
+
 ## Setup
 
 ```bash
@@ -38,7 +99,8 @@ Every request below uses `Authorization: Bearer $API_KEY`. Health endpoints
 
 **Smoke test before use:**
 ```bash
-curl -fsS "$BASE_URL/v1/health/ready" && curl -fsS "$BASE_URL/v1/models" | jq
+curl -fsS "$BASE_URL/v1/health/ready"
+curl -fsS "$BASE_URL/v1/models" -H "Authorization: Bearer $API_KEY" | jq
 ```
 
 ## Quick Start — dense captions from a local video
